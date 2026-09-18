@@ -1,0 +1,11 @@
+# Données locales du lanceur (versions, Java, logs, comptes, skins)
+data/
+
+# Artefacts de build
+build/
+dist/
+
+# Python
+__pycache__/
+*.py[cod]
+*.log
