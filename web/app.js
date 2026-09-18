@@ -5,32 +5,53 @@
 // ---------------- utilitaires ----------------
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
+// Mode "vitrine" : le launcher local n'est pas joignable (ex. page GitHub)
+let DEMO = false;
+
+async function apiFetch(path, options) {
+  try {
+    return await fetch(path, options);
+  } catch (e) {
+    DEMO = true;
+    throw new Error("Launcher hors ligne (mode démo)");
+  }
+}
+
+async function apiJson(r) {
+  try {
+    return await r.json();
+  } catch (e) {
+    DEMO = true;
+    throw new Error("Launcher hors ligne (mode démo)");
+  }
+}
+
 const api = {
   async get(path) {
-    const r = await fetch(path);
-    const j = await r.json();
+    const r = await apiFetch(path);
+    const j = await apiJson(r);
     if (!r.ok) throw new Error(j.error || "Erreur");
     return j;
   },
   async post(path, body) {
-    const r = await fetch(path, {
+    const r = await apiFetch(path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body || {}),
     });
-    const j = await r.json();
+    const j = await apiJson(r);
     if (!r.ok) throw new Error(j.error || "Erreur");
     return j;
   },
   async del(path) {
-    const r = await fetch(path, { method: "DELETE" });
-    const j = await r.json();
+    const r = await apiFetch(path, { method: "DELETE" });
+    const j = await apiJson(r);
     if (!r.ok) throw new Error(j.error || "Erreur");
     return j;
   },
   async upload(path, formData) {
-    const r = await fetch(path, { method: "POST", body: formData });
-    const j = await r.json();
+    const r = await apiFetch(path, { method: "POST", body: formData });
+    const j = await apiJson(r);
     if (!r.ok) throw new Error(j.error || "Erreur");
     return j;
   },
@@ -51,11 +72,17 @@ const TYPE_LABEL = {
 
 let toastTimer = null;
 function toast(msg, kind = "") {
+  if (DEMO && kind === "err") return; // en mode vitrine : pas de toasts d'erreur
   const t = $("#toast");
   t.textContent = msg;
   t.className = "toast " + kind;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { t.className = "toast hidden"; }, 4200);
+}
+
+function showDemoBanner() {
+  const b = $("#demo-banner");
+  if (b) b.classList.remove("hidden");
 }
 
 // ---------------- état ----------------
@@ -775,7 +802,8 @@ async function init() {
     // Actualisation en arrière-plan
     loadVersions(true).catch(() => {});
   } catch (e) {
-    toast("Impossible de joindre le lanceur : " + e.message, "err");
+    if (DEMO) showDemoBanner();
+    else toast("Impossible de joindre le lanceur : " + e.message, "err");
   }
 
   $("#search").addEventListener("input", (e) => { query = e.target.value; renderList(); });
