@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Redstone Launcher (RL)</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+<script>
+// Applique immédiatement le thème enregistré pour éviter le « flash » de couleur.
+(function () {
+  try {
+    fetch("/api/appearance").then(function (r) { return r.json(); }).then(function (app) {
+      if (!app || typeof app !== "object") return;
+      var theme = app.preset || "github-dark";
+      document.body.dataset.theme = theme;
+      document.body.dataset.anim = app.anim === false ? "off" : "on";
+      if (app.glow === false) document.body.classList.add("no-logo-glow");
+      if (app.accent && /^#([a-f\d]{3}|[a-f\d]{6})$/i.test(app.accent)) {
+        var root = document.documentElement.style;
+        root.setProperty("--accent", app.accent);
+        var r = parseInt(app.accent.slice(1, 3), 16), g = parseInt(app.accent.slice(3, 5), 16), b = parseInt(app.accent.slice(5, 7), 16);
+        root.setProperty("--accent-dim", "rgb(" + Math.max(0, r - 45) + "," + Math.max(0, g - 45) + "," + Math.max(0, b - 45) + ")");
+        root.setProperty("--glow-blue", "rgba(" + r + "," + g + "," + b + ",.2)");
+      }
+    }).catch(function () {});
+  } catch (e) {}
+})();
+</script>
+</head>
+<body>
+
+<!-- Barre latérale de navigation -->
+<div class="app">
+  <nav class="nav" id="nav">
+    <div class="nav-brand">
+      <svg class="logo" viewBox="0 0 64 64" aria-hidden="true">
+        <defs>
+          <radialGradient id="torchGlow" cx="50%" cy="40%" r="65%">
+            <stop offset="0%" stop-color="#ffd9a0"/>
+            <stop offset="45%" stop-color="#ff7a3c"/>
+            <stop offset="100%" stop-color="#e6492d"/>
+          </radialGradient>
+        </defs>
+        <rect x="27" y="32" width="10" height="26" rx="2" fill="#8a745a"/>
+        <rect x="24" y="30" width="16" height="6" rx="2" fill="#a9926f"/>
+        <circle cx="32" cy="24" r="11" fill="url(#torchGlow)"/>
+        <circle cx="32" cy="24" r="11" fill="none" stroke="#ffb36b" stroke-width="1" opacity=".5"/>
+        <circle cx="30" cy="22" r="3" fill="#ffe9c4" opacity=".9"/>
+      </svg>
+      <div class="nav-title">
+        <h1>Redstone<span>Launcher</span></h1>
+        <p>RL · toutes les versions</p>
+      </div>
+    </div>
+    <div class="nav-sections">
+      <button class="nav-item active" data-view="play">▶ Jouer</button>
+      <button class="nav-item" data-view="servers">Serveurs</button>
+      <button class="nav-item" data-view="accounts">Comptes</button>
+      <button class="nav-item" data-view="bedrock">Bedrock</button>
+      <button class="nav-item" data-view="appearance">Apparence</button>
+      <button class="nav-item" data-view="settings">Réglages</button>
+    </div>
+    <div class="nav-foot">
+      <div class="disk-chip" id="diskChip" title="Espace utilisé par le lanceur">…</div>
+      <div class="nav-foot-links">
+        <a href="#" id="linkCleanup">Nettoyer le cache</a>
+        <a href="#" id="linkStats">Statistiques</a>
+      </div>
+      <p class="nav-version">Redstone Launcher v1.0</p>
+    </div>
+  </nav>
+
+  <main class="content">
+    <!-- Vue : Jouer -->
+    <section class="view" id="view-play">
+      <div class="play-layout">
+        <aside class="sidebar">
+          <div class="filters">
+            <div class="search-wrap">
+              <svg class="search-ico" viewBox="0 0 24 24" width="16" height="16"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><line x1="16.5" y1="16.5" x2="21" y2="21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              <input id="search" type="text" placeholder="Rechercher une version…" autocomplete="off">
+            </div>
+            <div class="filter-tabs">
+              <button data-filter="all" class="active">Toutes</button>
+              <button data-filter="release">Release</button>
+              <button data-filter="snapshot">Snapshot</button>
+              <button data-filter="old_beta">Bêta</button>
+              <button data-filter="old_alpha">Alpha</button>
+            </div>
+            <div class="filter-count" id="filterCount"></div>
+          </div>
+          <ul id="versionList" class="version-list"></ul>
+          <div class="sidebar-foot">
+            <button id="btnRefresh" class="btn tiny">↻ Actualiser la liste</button>
+          </div>
+        </aside>
+
+        <section class="detail">
+          <div id="emptyState" class="empty">
+            <svg class="empty-torch" viewBox="0 0 64 64" width="76" height="76">
+              <rect x="29" y="34" width="6" height="22" fill="#7a6a52"/>
+              <circle cx="32" cy="26" r="10" fill="#e6492d" opacity=".9"/>
+              <circle cx="32" cy="26" r="6" fill="#ff7a3c"/>
+              <circle cx="30" cy="24" r="2.4" fill="#ffe9c4" opacity=".9"/>
+            </svg>
+            <p>Sélectionne une version à gauche<br>pour la lancer.</p>
+          </div>
+
+          <div id="detailPane" class="hidden">
+            <div class="detail-head">
+              <div class="detail-title">
+                <h2 id="dVersion"></h2>
+                <div class="title-tags">
+                  <span id="dType" class="badge"></span>
+                  <span id="dDate" class="muted"></span>
+                  <span id="dInstalled" class="installed-chip hidden"></span>
+                </div>
+              </div>
+            </div>
+            <div class="detail-meta">
+              <div class="meta-item"><label>Java requis</label><span id="dJava"></span></div>
+              <div class="meta-item"><label>Client</label><span id="dSizeClient"></span></div>
+              <div class="meta-item"><label>Assets</label><span id="dSizeAssets"></span></div>
+              <div class="meta-item"><label>Espace installé</label><span id="dSizeInstalled">—</span></div>
+            </div>
+
+            <div class="row account-row">
+              <label for="accountSelect">Compte</label>
+              <select id="accountSelect"></select>
+              <button id="btnNewAccount" class="btn small">+ Nouveau</button>
+            </div>
+
+            <div class="row ram-row">
+              <label for="ramSlider">Mémoire (RAM)</label>
+              <input type="range" id="ramSlider" min="1024" max="8192" step="512">
+              <span id="ramLabel" class="ram-label"></span>
+            </div>
+
+            <div id="javaRow" class="java-hint"></div>
+
+            <div class="version-actions">
+              <button id="btnOpenFolder" class="btn ghost small" title="Ouvrir le dossier de cette version">📂 Dossier</button>
+              <button id="btnRepair" class="btn ghost small" title="Réparer cette version (re-télécharger le client)">↻ Réparer</button>
+              <button id="btnDelete" class="btn ghost small danger" title="Supprimer cette version">🗑 Supprimer</button>
+            </div>
+
+            <div class="detail-actions">
+              <button id="btnPlay" class="btn play">▶&nbsp; JOUER</button>
+            </div>
+
+            <div id="progressArea" class="hidden">
+              <div class="progress-stage">
+                <span id="pStage"></span>
+                <span id="pPercent" class="muted"></span>
+              </div>
+              <div class="progress-track"><div id="pBar" class="progress-bar"></div></div>
+              <div id="pMessage" class="muted"></div>
+              <details id="logBox">
+                <summary>Journal de lancement</summary>
+                <pre id="logText"></pre>
+              </details>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <!-- Vue : Serveurs -->
+    <section class="view hidden" id="view-servers">
+      <div class="view-head">
+        <h2>Serveurs Multiplayer</h2>
+        <p class="muted">Rejoins tes serveurs favoris en un clic.</p>
+      </div>
+      <div class="server-add card">
+        <input id="srvName" type="text" placeholder="Nom du serveur (ex : Hypixel)" class="input">
+        <input id="srvAddress" type="text" placeholder="Adresse (ex : mc.hypixel.net ou ip:port)" class="input">
+        <button id="btnAddServer" class="btn">Ajouter</button>
+      </div>
+      <ul id="serverList" class="server-list"></ul>
+      <p class="hint">Choisis d'abord une version et un compte dans l'onglet « Jouer », puis clique « Connexion rapide ».</p>
+    </section>
+
+    <!-- Vue : Comptes -->
+    <section class="view hidden" id="view-accounts">
+      <div class="view-head">
+        <h2>Comptes</h2>
+        <p class="muted">Comptes locaux (hors-ligne, éducatif) ou Microsoft.</p>
+      </div>
+      <div class="account-list" id="accountList"></div>
+      <div class="card account-add-card">
+        <div class="modal-sep">Ajouter un compte local (hors-ligne)</div>
+        <div class="offline-add">
+          <input id="offlineName" type="text" placeholder="Nom du compte (ex : Eleve1)">
+          <button id="btnAddOffline" class="btn">Créer</button>
+        </div>
+        <p class="hint">Le compte <b>local</b> ne nécessite <b>aucune connexion</b> (mode hors-ligne,
+          idéal pour une utilisation éducative / en classe). Tu peux lui <b>ajouter un skin</b>
+          (bouton « Skin », fichier PNG 64×64 ou 128×128).</p>
+        <div class="modal-sep">Compte Microsoft</div>
+        <button id="btnMSLogin" class="btn small red">Se connecter avec un compte Microsoft</button>
+        <p class="hint">Le compte Microsoft permet de jouer en ligne avec un vrai profil Minecraft
+          (et son skin officiel). La connexion se fait <b>sans mot de passe</b> : chaque personne
+          saisit elle-même ses identifiants sur la page Microsoft — le lanceur ne stocke jamais
+          de mot de passe.</p>
+        <div id="msArea" class="hidden">
+          <div class="ms-code-box">
+            <p>Va sur <b id="msUri"></b> et saisis le code :</p>
+            <div id="msCode" class="ms-code"></div>
+          </div>
+        </div>
+        <div id="msMessage" class="muted"></div>
+      </div>
+    </section>
+
+    <!-- Vue : Bedrock -->
+    <section class="view hidden" id="view-bedrock">
+      <div class="view-head">
+        <h2>Minecraft Bedrock Edition</h2>
+        <p class="muted">Version Bedrock (Windows) — resource packs et lancement.</p>
+      </div>
+      <div class="card">
+        <div class="bedrock-not-installed hidden">
+          <p>Minecraft Bedrock n'est pas installé sur cet ordinateur.</p>
+          <p class="hint">Bedrock est disponible gratuitement si tu possèdes Minecraft Java
+            (compte Microsoft lié). Sinon, achète-le sur le Microsoft Store.</p>
+          <button id="btnBedrockStore" class="btn">Ouvrir le Microsoft Store</button>
+        </div>
+        <div class="bedrock-installed hidden">
+          <div class="bedrock-info">
+            <div class="bedrock-icon">🟩</div>
+            <div>
+              <div class="bedrock-name">Minecraft Bedrock</div>
+              <div class="bedrock-version muted" id="bedrockVersion"></div>
+            </div>
+          </div>
+          <button id="btnBedrockPlay" class="btn play full">▶&nbsp; JOUER À BEDROCK</button>
+          <p class="hint">Bedrock se lance avec ton compte Microsoft connecté au Store.
+            Aucune connexion supplémentaire n'est nécessaire dans le lanceur.</p>
+          <div class="modal-sep">Resource packs</div>
+          <div class="bedrock-packs">
+            <div id="dropZoneBedrock" class="drop-zone">
+              <p>Dépose un fichier <b>.mcpack</b> ici<br>ou clique pour choisir</p>
+            </div>
+            <input id="bedrockPackInput" type="file" accept=".mcpack,.zip" class="hidden">
+            <ul id="bedrockPackList" class="mod-list"></ul>
+            <button id="btnBedrockOpenFolder" class="btn small ghost">📂 Ouvrir le dossier des packs</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Vue : Apparence -->
+    <section class="view hidden" id="view-appearance">
+      <div class="view-head">
+        <h2>Apparence</h2>
+        <p class="muted">Personnalise le style visuel du lanceur : thème, couleurs, fond.</p>
+      </div>
+
+      <div class="settings-grid">
+        <div class="card set-card">
+          <div class="set-row">
+            <label>Thème</label>
+            <div id="themeGrid" class="theme-grid"></div>
+            <p class="hint">Choisis une ambiance prédéfinie. Tu peux ensuite affiner les couleurs ci-dessous.</p>
+          </div>
+
+          <div class="set-row">
+            <label>Couleur d'accent</label>
+            <div class="accent-row">
+              <input id="accentColor" type="color" value="#58a6ff">
+              <span id="accentHex" class="accent-hex">#58a6ff</span>
+              <button id="btnAccentReset" class="btn small ghost">↺ Défaut</button>
+            </div>
+            <p class="hint">La couleur des boutons actifs, liens, sélections et halos.</p>
+          </div>
+
+          <div class="set-row check">
+            <label for="themeGlow">Halo lumineux du logo (torche)</label>
+            <input id="themeGlow" type="checkbox">
+          </div>
+          <div class="set-row check">
+            <label for="themeAnim">Animations (fondu, brillance)</label>
+            <input id="themeAnim" type="checkbox">
+          </div>
+        </div>
+
+        <div class="card set-card">
+          <div class="set-row">
+            <label>Fond de l'application</label>
+            <select id="themeBg">
+              <option value="auto">Automatique (selon le thème)</option>
+              <option value="redstone">Lueur redstone</option>
+              <option value="emerald">Lueur émeraude</option>
+              <option value="blue">Lueur bleue</option>
+              <option value="purple">Lueur violette</option>
+              <option value="plain">Uni (sombre)</option>
+            </select>
+          </div>
+
+          <div class="set-row">
+            <label>Aperçu</label>
+            <div id="themePreview" class="theme-preview">
+              <div class="tp-nav"></div>
+              <div class="tp-body">
+                <div class="tp-card">
+                  <div class="tp-bar"></div>
+                  <div class="tp-btn"></div>
+                </div>
+                <div class="tp-card tp-card2">
+                  <div class="tp-line"></div>
+                  <div class="tp-line short"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="set-row">
+            <label>Actions</label>
+            <div class="theme-actions">
+              <button id="btnAppearanceSave" class="btn">Enregistrer</button>
+              <button id="btnAppearanceReset" class="btn ghost">↺ Rétablir par défaut</button>
+            </div>
+            <p class="hint" id="appearanceStatus"></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Vue : Réglages -->
+    <section class="view hidden" id="view-settings">
+      <div class="view-head">
+        <h2>Réglages</h2>
+        <p class="muted">Dossier d'installation, Java, réseau et lancement.</p>
+      </div>
+      <div class="settings-grid">
+        <div class="card set-card">
+          <div class="set-row">
+            <label>Dossier d'installation du jeu</label>
+            <div class="path-row">
+              <input id="setInstallDir" type="text" placeholder="vide = dossier par défaut du lanceur">
+              <button id="btnBrowse" class="btn small">Parcourir…</button>
+            </div>
+            <p class="hint">Chaque version installée est un sous-dossier (ex : « 1.20.4 ») contenant ses mondes et sa configuration.</p>
+          </div>
+          <div class="set-row">
+            <label>Java (chemin vers java.exe, vide = auto)</label>
+            <input id="setJava" type="text" placeholder="ex: C:\...\bin\java.exe">
+          </div>
+          <div class="set-row">
+            <label>Proxy local (optionnel, ex : http://127.0.0.1:7890)</label>
+            <input id="setProxy" type="text" placeholder="vide = proxy système / aucun">
+            <p class="hint">Utile si tu passes par un proxy pour accéder à Minecraft.</p>
+          </div>
+          <div class="set-row">
+            <label>Source de téléchargement</label>
+            <select id="setMirror">
+              <option value="auto">Auto — officiel, puis miroir BMCLAPI</option>
+              <option value="off">Mojang uniquement</option>
+              <option value="bmclapi">Miroir BMCLAPI en priorité</option>
+            </select>
+          </div>
+          <div class="set-row check">
+            <label for="setAutoJava">Télécharger automatiquement Java si nécessaire</label>
+            <input id="setAutoJava" type="checkbox">
+          </div>
+          <div class="set-row check">
+            <label for="setFullscreen">Lancer le jeu en plein écran</label>
+            <input id="setFullscreen" type="checkbox">
+          </div>
+          <div class="set-row">
+            <label>Résolution de la fenêtre</label>
+            <div class="res-row">
+              <input id="setWidth" type="number" min="320" step="16"> ×
+              <input id="setHeight" type="number" min="240" step="16">
+            </div>
+          </div>
+          <div id="javaStatus" class="java-hint"></div>
+          <button id="btnSaveSettings" class="btn">Enregistrer</button>
+        </div>
+
+        <div class="card set-card">
+          <div class="set-row">
+            <label>Espace utilisé</label>
+            <div id="diskStats" class="disk-stats">Chargement…</div>
+          </div>
+          <div class="set-row">
+            <label>Maintenance</label>
+            <button id="btnCleanup" class="btn small">🧹 Nettoyer le cache (logs & natives)</button>
+            <p class="hint">Supprime les anciens logs et natives orphelins. Ne touche pas aux versions ni aux mondes.</p>
+          </div>
+          <div class="set-row">
+            <label>À propos</label>
+            <p class="hint">Redstone Launcher (RL) — lanceur Minecraft communautaire.<br>
+              Toutes les versions : alpha, bêta, snapshots, releases.<br>
+              Comptes locaux (usage éducatif) et Microsoft.<br>
+              Licence MIT · © 2026 · yyley2015@hotmail.com</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- Explorateur de dossiers -->
+<div id="modalFolder" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-head"><h3>Choisir un dossier d'installation</h3><button class="btn close" data-close>×</button></div>
+    <div id="folderPath" class="folder-path"></div>
+    <ul id="folderList" class="folder-list"></ul>
+    <div class="folder-actions">
+      <button id="btnFolderUp" class="btn small">↑ Dossier parent</button>
+      <button id="btnFolderChoose" class="btn">Choisir ce dossier</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modale de confirmation -->
+<div id="modalConfirm" class="modal hidden">
+  <div class="modal-card small">
+    <div class="modal-head"><h3 id="confirmTitle">Confirmer</h3><button class="btn close" data-close>×</button></div>
+    <p id="confirmText" class="confirm-text"></p>
+    <div class="confirm-actions">
+      <button id="btnConfirmCancel" class="btn ghost">Annuler</button>
+      <button id="btnConfirmOk" class="btn red">Confirmer</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
